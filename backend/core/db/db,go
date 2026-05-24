@@ -1,0 +1,156 @@
+package db
+
+import (
+	"bufio"
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+)
+
+var DB *gorm.DB
+
+func DBconnect() error {
+	user := os.Getenv("DB_USER")
+	if user == "" {
+		user = "secy"
+	}
+	dbname := os.Getenv("DB_NAME")
+	if dbname == "" {
+		dbname = "secydata"
+	}
+	password := os.Getenv("DB_PASSWORD")
+	if password == "" {
+		password = "12345"
+	}
+	host := os.Getenv("DB_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("DB_PORT")
+	if port == "" {
+		port = "5432"
+	}
+
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=UTC", host, user, password, dbname, port)
+	gormDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return err
+	}
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := pingContext(ctx, sqlDB); err != nil {
+		sqlDB.Close()
+		return err
+	}
+	DB = gormDB
+	return nil
+}
+
+func Close() {
+	if DB == nil {
+		return
+	}
+	sqlDB, err := DB.DB()
+	if err == nil && sqlDB != nil {
+		sqlDB.Close()
+	}
+	DB = nil
+}
+func pingContext(ctx context.Context, sqlDB *sql.DB) error {
+	s
+	return sqlDB.PingContext(ctx)
+}
+
+func LoadEnvFile(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		value = strings.Trim(value, `"'`)
+		if key == "" {
+			continue
+		}
+		if os.Getenv(key) == "" {
+			_ = os.Setenv(key, value)
+		}
+	}
+
+	return scanner.Err()
+}
+
+func EnsureTables() error {
+	if DB == nil {
+		return fmt.Errorf("database not connected")
+	}
+
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS users (
+			id BIGSERIAL PRIMARY KEY,
+			username VARCHAR(100) NOT NULL,
+			email VARCHAR(255) NOT NULL UNIQUE,
+			password_hash VARCHAR(255) NOT NULL,
+			is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW()
+		);`,
+		`CREATE TABLE IF NOT EXISTS rooms (
+			id BIGSERIAL PRIMARY KEY,
+			room_id VARCHAR(128) NOT NULL UNIQUE,
+			owner_client_id VARCHAR(128) NOT NULL DEFAULT '',
+			owner_display_name VARCHAR(255) NOT NULL DEFAULT '',
+			occupancy INTEGER NOT NULL DEFAULT 0,
+			capacity INTEGER NOT NULL DEFAULT 4,
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW()
+		);`,
+		`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS owner_client_id VARCHAR(128) NOT NULL DEFAULT '';`,
+		`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS owner_display_name VARCHAR(255) NOT NULL DEFAULT '';`,
+		`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS occupancy INTEGER NOT NULL DEFAULT 0;`,
+		`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS capacity INTEGER NOT NULL DEFAULT 4;`,
+		`UPDATE rooms SET occupancy = 0 WHERE occupancy < 0;`,
+		`UPDATE rooms SET capacity = 4 WHERE capacity <= 0;`,
+		`CREATE TABLE IF NOT EXISTS room_members (
+			id BIGSERIAL PRIMARY KEY,
+			room_id VARCHAR(128) NOT NULL,
+			client_id VARCHAR(128) NOT NULL,
+			display_name VARCHAR(255) NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			CONSTRAINT idx_room_client UNIQUE (room_id, client_id)
+		);`,
+		`ALTER TABLE room_members ADD COLUMN IF NOT EXISTS display_name VARCHAR(255) NOT NULL DEFAULT '';`,
+		`CREATE INDEX IF NOT EXISTS idx_room_members_room_id ON room_members(room_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_room_members_client_id ON room_members(client_id);`,
+	}
+
+	for _, statement := range statements {
+		if err := DB.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
