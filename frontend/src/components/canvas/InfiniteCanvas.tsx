@@ -37,6 +37,7 @@ export default function InfiniteCanvas({ roomId, className }: InfiniteCanvasProp
     let mounted = true;
     let provider: any = null;
     let doc: any = null;
+    const syncObserverRefs: Array<() => void> = [];
 
     (async () => {
       const Y = await import("yjs");
@@ -45,13 +46,38 @@ export default function InfiniteCanvas({ roomId, className }: InfiniteCanvasProp
       if (!mounted) return;
       doc = new Y.Doc();
       provider = new ws.WebsocketProvider(WEBSOCKET_URL, roomId, doc);
+
+      // Log provider status to help debug connectivity issues
+      try {
+        provider.on && provider.on("status", (event: any) => {
+          // event.status === 'connected' | 'disconnected'
+          // eslint-disable-next-line no-console
+          console.debug("y-websocket status:", event);
+        });
+        provider.on && provider.on("sync", (isSynced: boolean) => {
+          // eslint-disable-next-line no-console
+          console.debug("y-websocket sync:", isSynced);
+        });
+      } catch (e) {
+        // ignore if provider doesn't support events
+      }
+
       const yLines = doc.getArray("lines");
 
       const syncLines = () => {
-        setLines(yLines.toArray());
+        try {
+          setLines(yLines.toArray());
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error("Failed to sync yLines -> React state", err);
+        }
       };
 
+      // keep a reference to the observer so we can unobserve it on cleanup
       yLines.observe(syncLines);
+      syncObserverRefs.push(() => yLines.unobserve(syncLines));
+
+      // initial sync
       syncLines();
 
       yLinesRef.current = yLines;
@@ -60,10 +86,10 @@ export default function InfiniteCanvas({ roomId, className }: InfiniteCanvasProp
     return () => {
       mounted = false;
       try {
-        if (yLinesRef.current && yLinesRef.current.unobserve) {
-          // remove observers if any
-          // no-op: we don't have the syncLines reference here
-        }
+        // remove observers we registered
+        syncObserverRefs.forEach((fn) => {
+          try { fn(); } catch {}
+        });
         if (provider && provider.destroy) provider.destroy();
         if (doc && doc.destroy) doc.destroy();
       } catch (e) {
