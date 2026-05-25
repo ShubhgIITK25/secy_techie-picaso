@@ -15,7 +15,7 @@ import (
 
 var DB *gorm.DB
 
-func DBconnect() error {
+func Dbconnect() error {
 	user := os.Getenv("DB_USER")
 	if user == "" {
 		user = "secy"
@@ -66,8 +66,8 @@ func Close() {
 	}
 	DB = nil
 }
+
 func pingContext(ctx context.Context, sqlDB *sql.DB) error {
-	s
 	return sqlDB.PingContext(ctx)
 }
 
@@ -109,24 +109,24 @@ func EnsureTables() error {
 
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS users (
-			id BIGSERIAL PRIMARY KEY,
-			username VARCHAR(100) NOT NULL,
-			email VARCHAR(255) NOT NULL UNIQUE,
-			password_hash VARCHAR(255) NOT NULL,
-			is_verified BOOLEAN NOT NULL DEFAULT FALSE,
-			created_at TIMESTAMPTZ DEFAULT NOW(),
-			updated_at TIMESTAMPTZ DEFAULT NOW()
-		);`,
+            id BIGSERIAL PRIMARY KEY,
+            username VARCHAR(100) NOT NULL,
+            email VARCHAR(255) NOT NULL UNIQUE,
+            password_hash VARCHAR(255) NOT NULL,
+            is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );`,
 		`CREATE TABLE IF NOT EXISTS rooms (
-			id BIGSERIAL PRIMARY KEY,
-			room_id VARCHAR(128) NOT NULL UNIQUE,
-			owner_client_id VARCHAR(128) NOT NULL DEFAULT '',
-			owner_display_name VARCHAR(255) NOT NULL DEFAULT '',
-			occupancy INTEGER NOT NULL DEFAULT 0,
-			capacity INTEGER NOT NULL DEFAULT 4,
-			created_at TIMESTAMPTZ DEFAULT NOW(),
-			updated_at TIMESTAMPTZ DEFAULT NOW()
-		);`,
+            id BIGSERIAL PRIMARY KEY,
+            room_id VARCHAR(128) NOT NULL UNIQUE,
+            owner_client_id VARCHAR(128) NOT NULL DEFAULT '',
+            owner_display_name VARCHAR(255) NOT NULL DEFAULT '',
+            occupancy INTEGER NOT NULL DEFAULT 0,
+            capacity INTEGER NOT NULL DEFAULT 4,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );`,
 		`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS owner_client_id VARCHAR(128) NOT NULL DEFAULT '';`,
 		`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS owner_display_name VARCHAR(255) NOT NULL DEFAULT '';`,
 		`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS occupancy INTEGER NOT NULL DEFAULT 0;`,
@@ -134,13 +134,13 @@ func EnsureTables() error {
 		`UPDATE rooms SET occupancy = 0 WHERE occupancy < 0;`,
 		`UPDATE rooms SET capacity = 4 WHERE capacity <= 0;`,
 		`CREATE TABLE IF NOT EXISTS room_members (
-			id BIGSERIAL PRIMARY KEY,
-			room_id VARCHAR(128) NOT NULL,
-			client_id VARCHAR(128) NOT NULL,
-			display_name VARCHAR(255) NOT NULL DEFAULT '',
-			created_at TIMESTAMPTZ DEFAULT NOW(),
-			CONSTRAINT idx_room_client UNIQUE (room_id, client_id)
-		);`,
+            id BIGSERIAL PRIMARY KEY,
+            room_id VARCHAR(128) NOT NULL,
+            client_id VARCHAR(128) NOT NULL,
+            display_name VARCHAR(255) NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT idx_room_client UNIQUE (room_id, client_id)
+        );`,
 		`ALTER TABLE room_members ADD COLUMN IF NOT EXISTS display_name VARCHAR(255) NOT NULL DEFAULT '';`,
 		`CREATE INDEX IF NOT EXISTS idx_room_members_room_id ON room_members(room_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_room_members_client_id ON room_members(client_id);`,
