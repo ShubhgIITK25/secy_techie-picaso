@@ -1,0 +1,105 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: secy
+      POSTGRES_PASSWORD: "12345"
+      POSTGRES_DB: secydata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secy -d secydata"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend1:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        MAIN_PACKAGE: ./server1
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "18080:18080"
+
+  backend2:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        MAIN_PACKAGE: ./server2
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "18081:18081"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - backend1
+      - backend2
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PRIVATE_API_PROXY_URL: http://nginx:8088
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    ports:
+      - "3000:3000"
+
+  yjs:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["npm", "run", "yjs:server"]
+    ports:
+      - "1234:1234"
+
+volumes:
+  postgres_data:
